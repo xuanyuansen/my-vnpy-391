@@ -1,12 +1,54 @@
+import sys
 from datetime import datetime
 import akshare as ak
+from tqdm import tqdm
 import pandas as pd
+tqdm.pandas(desc="progress status")
+
 from vnpy.trader.object import TradeData, OrderData
 from vnpy.trader.constant import Exchange
-
 from vnpy.trader.optimize import OptimizationSetting
 from vnpy.app.vnpy_ctastrategy.backtesting import BacktestingEngine
-from vnpy.app.vnpy_ctastrategy.strategies.mass_break_strategy import MassBreakStrategy
+# from vnpy.app.vnpy_ctastrategy.strategies.mass_break_strategy import MassBreakStrategy
+from vnpy.app.vnpy_ctastrategy.strategies.mass_break_ver_2_strategy import MassBreakVer2Strategy
+
+
+def get_stock_basic_info_ak(stock_code: str):
+    try:
+        stock_individual_info_em_df = ak.stock_individual_info_em(symbol=stock_code)
+        # print(stock_individual_info_em_df)
+        market_value = (
+            0.0
+            if isinstance(stock_individual_info_em_df.loc[0, "value"], str)
+            else stock_individual_info_em_df.loc[0, "value"] / 100000000
+        )
+        flow_market_value = (
+            0.0
+            if isinstance(stock_individual_info_em_df.loc[1, "value"], str)
+            else stock_individual_info_em_df.loc[1, "value"] / 100000000
+        )
+        capitalization = (
+            0.0
+            if isinstance(stock_individual_info_em_df.loc[6, "value"], str)
+            else stock_individual_info_em_df.loc[6, "value"] / 100000000
+        )
+        flow_capitalization = (
+            0.0
+            if isinstance(stock_individual_info_em_df.loc[7, "value"], str)
+            else stock_individual_info_em_df.loc[7, "value"] / 100000000
+        )
+        stock_name = stock_individual_info_em_df.loc[5, "value"]
+        current_price = market_value / capitalization
+        return (
+            stock_name,
+            current_price,
+            market_value,
+            flow_market_value,
+            capitalization,
+            flow_capitalization,
+        )
+    except Exception as e:
+        return '', 0.0, 0.0, 0.0, 0.0, 0.0
 
 
 def get_code_list(m_type):
@@ -39,8 +81,8 @@ def test_single_code(engine, ts_code, _market_type):
         capital=1_000_000,
     )
     engine.add_strategy(
-        MassBreakStrategy,
-        {"average_price_day": 5, "sell_price_base_day": 2, "volume_break": 0.3, "stop_ratio": 0.04},
+        MassBreakVer2Strategy,
+        {"average_price_day": 5, "sell_price_base_day": 2, "volume_break": 0.3, "stop_ratio": 0},
     )
     engine.load_data()
     engine.run_backtesting()
@@ -61,9 +103,10 @@ def test_single_code(engine, ts_code, _market_type):
 
 
 if __name__ == "__main__":
+    market = sys.argv[1]
     vnpy_engine = BacktestingEngine()
     result_list = []
-    stock_list, market_type = get_code_list("sh")
+    stock_list, market_type = get_code_list(market)
     for t_stock in stock_list:
         try:
             res, _trade_time, _trade_type = test_single_code(
@@ -79,5 +122,8 @@ if __name__ == "__main__":
         except Exception as e:
             print(e)
     result_df = pd.concat(result_list, axis=0, ignore_index=True)
-    print(result_df)
-    result_df.to_csv("res.csv")
+    result_df['basic_info'] = result_df.progress_apply(lambda row: get_stock_basic_info_ak(row["code"]), axis=1)
+    result_df['market_value'] = result_df.progress_apply(lambda row: row["basic_info"][2], axis=1)
+    result_df['ch_name'] = result_df.progress_apply(lambda row: row["basic_info"][0], axis=1)
+    print(result_df[:10])
+    result_df.to_csv("res_{}_{}.csv".format(market, datetime.now().strftime('%Y-%m-%d')))

@@ -1,4 +1,4 @@
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 from typing import Dict, List, Optional, Callable
 from copy import deepcopy
 
@@ -143,17 +143,42 @@ class AkshareDatafeed(BaseDatafeed):
         return True
 
     def get_data_by_akshare(
-        self, code: str, start_date: str, end_date: str, asset, freq: str
+        self, code: str, start_date: str, end_date: str, asset: str, freq: str
     ):
-        if "m" in freq:
-            df: DataFrame = ak.stock_zh_a_minute(
-                symbol=code, period=freq[:-1], adjust="qfq"
-            )
+        if asset == 'E' or asset == 'I':
+            print("freq is {}, freq[:-1] is {}".format(freq, freq[:-1]))
+            if "m" in freq or 'h' in freq:
+                if 'h' in freq and '1h'==freq:
+                    df: DataFrame = ak.stock_zh_a_minute(
+                        symbol=code, period='60m', adjust="qfq"
+                    )
+                else:
+                    df: DataFrame = ak.stock_zh_a_minute(
+                        symbol=code, period=freq[:-1], adjust="qfq"
+                    )
+
+            else:
+                df: DataFrame = ak.stock_zh_a_daily(
+                    symbol=code, start_date=start_date, end_date=end_date, adjust="qfq"
+                )
+            return df
+        elif asset == "FT":
+            print("freq is {}, freq[:-1] is {}".format(freq, freq[:-1]))
+            if freq == '1h' or freq == '60m':
+                _period = "60"
+            elif freq == 'D':
+                _period = "D"
+            else:
+                _period = "1"
+            if _period == "1" or _period == "60":
+                df = ak.futures_zh_minute_sina(symbol=code.split('.')[0], period=_period)
+            else:
+                df = ak.futures_zh_daily_sina(symbol=code.split('.')[0]+"0")
+            print(df[:10])
+            return df
         else:
-            df: DataFrame = ak.stock_zh_a_daily(
-                symbol=code, start_date=start_date, end_date=end_date, adjust="qfq"
-            )
-        return df
+            return None
+
 
     def query_bar_history(
         self, req: HistoryRequest, output: Callable = print
@@ -230,9 +255,15 @@ class AkshareDatafeed(BaseDatafeed):
                     # dt: str = row["date"]
                     # dt: datetime = datetime.strptime(dt, "%Y-%m-%d")
                     dt: datetime = row["date"]
-                    dt: datetime = datetime.strptime(dt.strftime("%Y-%m-%d"), "%Y-%m-%d")
+                    if isinstance(dt, datetime):
+                        dt: datetime = datetime.strptime(dt.strftime("%Y-%m-%d"), "%Y-%m-%d")
+                    elif isinstance(dt, date):
+                        dt: datetime = datetime.strptime("{}-{}-{}".format(dt.year, dt.month, dt.day), "%Y-%m-%d")
+                    else:
+                        dt: datetime = dt
+
                 else:
-                    dt: str = row["trade_time"]
+                    dt: str = row["datetime"]
                     dt: datetime = (
                         datetime.strptime(dt, "%Y-%m-%d %H:%M:%S") - adjustment
                     )
